@@ -23,7 +23,13 @@ jobs:
           node-version: "20"
 
       - name: Install NSIS
-        run: choco install nsis -y
+        shell: powershell
+        run: |
+          choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+
+      - name: Verify NSIS
+        run: makensis /VERSION
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -31,9 +37,12 @@ jobs:
       - name: Build
         run: wails build -nsis
 
+      - name: List build output
+        run: dir build\bin
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           name: Speedo ${{ github.ref_name }}
           files: |
-            build/bin/*installer*.exe
+            build/bin/*.exe
