@@ -82,6 +82,10 @@ FunctionEnd
 Section
     !insertmacro wails.setShellContext
 
+    # Stop any running instance so we can overwrite the exe.
+    nsExec::Exec 'taskkill /F /IM "${PRODUCT_EXECUTABLE}" /T'
+    Sleep 500
+
     !insertmacro wails.webview2runtime
 
     SetOutPath $INSTDIR
@@ -99,6 +103,10 @@ SectionEnd
 
 Section "uninstall"
     !insertmacro wails.setShellContext
+
+    # Stop any running instance so files can be removed.
+    nsExec::Exec 'taskkill /F /IM "${PRODUCT_EXECUTABLE}" /T'
+    Sleep 500
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 
