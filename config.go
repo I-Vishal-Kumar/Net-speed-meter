@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,7 +11,7 @@ import (
 
 // Config holds persistent user settings.
 type Config struct {
-	Placement        string `json:"placement"`        // "tray" or "left"
+	Placement        string `json:"placement"` // "tray" or "left"
 	StartWithWindows bool   `json:"startWithWindows"`
 }
 
@@ -33,7 +34,9 @@ func configDir() string {
 		dir = os.TempDir()
 	}
 	d := filepath.Join(dir, "speedo")
-	os.MkdirAll(d, 0o755)
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		log.Printf("speedo: create config dir %s: %v", d, err)
+	}
 	return d
 }
 
@@ -56,10 +59,14 @@ func LoadConfig() Config {
 
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("speedo: read config %s: %v", cfgPath, err)
+		}
 		return defaultConfig()
 	}
 	var c Config
-	if json.Unmarshal(data, &c) != nil {
+	if err := json.Unmarshal(data, &c); err != nil {
+		log.Printf("speedo: parse config %s: %v", cfgPath, err)
 		return defaultConfig()
 	}
 	if c.Placement == "" {
@@ -83,16 +90,26 @@ func LoadDailyStats() DailyStats {
 	today := time.Now().Format("2006-01-02")
 	data, err := os.ReadFile(dayPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("speedo: read daily stats %s: %v", dayPath, err)
+		}
 		return DailyStats{Date: today}
 	}
 	var d DailyStats
-	if json.Unmarshal(data, &d) != nil || d.Date != today {
+	if err := json.Unmarshal(data, &d); err != nil {
+		log.Printf("speedo: parse daily stats %s: %v", dayPath, err)
+		return DailyStats{Date: today}
+	}
+	if d.Date != today {
 		return DailyStats{Date: today}
 	}
 	return d
 }
 
-func SaveDailyStats(d DailyStats) {
-	data, _ := json.MarshalIndent(d, "", "  ")
-	os.WriteFile(dayPath, data, 0o644)
+func SaveDailyStats(d DailyStats) error {
+	data, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dayPath, data, 0o644)
 }

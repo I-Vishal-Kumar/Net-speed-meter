@@ -28,30 +28,38 @@
 </div>
 
 <style>
+  /* All sizing is relative to viewport height so the layout fills whatever
+     window size the backend sets based on the live taskbar height. */
   .bar {
-    width: 86px;
-    height: 36px;
+    width: 100vw;
+    height: 100vh;
+    /* 1em ≈ 22% of bar height — leaves vertical breathing room above and
+       below the two rows so the content sits centered like native tray items. */
+    font-size: 22vh;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    align-items: flex-end;
-    gap: 0;
+    align-items: stretch;
     background: transparent;
     cursor: default;
+    overflow: hidden;
+    padding: 0 0.25em;
+    gap: 0.3em;
   }
 
   .row {
     display: flex;
     align-items: center;
-    gap: 1px;
-    height: 17px;
+    gap: 0.15em;
+    line-height: 1.05;
     width: 100%;
-    line-height: 17px;
+    justify-content: flex-end;
   }
 
+
   .arrow {
-    font-size: 7px;
-    width: 10px;
+    font-size: 0.55em;
+    width: 1em;
     text-align: center;
     flex-shrink: 0;
   }
@@ -60,21 +68,21 @@
   .arrow.ul { color: #ff6b6b; }
 
   .num {
-    font-size: 11.5px;
+    font-size: 0.95em;
     font-weight: 600;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
-    min-width: 28px;
+    min-width: 2.4em;
     text-align: right;
-    letter-spacing: -0.3px;
-    padding-right: 1px;
+    letter-spacing: -0.02em;
   }
 
   .unit {
-    font-size: 9px;
+    font-size: 0.7em;
     font-weight: 400;
-    color: rgba(255, 255, 255, 0.55);
-    letter-spacing: 0.2px;
-    width: 26px;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 0.02em;
+    width: 2em;
+    margin-left: 0.1em;
   }
 </style>

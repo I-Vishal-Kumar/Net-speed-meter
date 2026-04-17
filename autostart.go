@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -32,7 +33,11 @@ func setAutoStart(enable bool) error {
 		if err != nil {
 			return err
 		}
-		return k.SetStringValue(regValueName, `"`+exe+`"`)
+		// CommandLineToArgvW strips a single layer of double quotes; embedded
+		// quotes inside the path must be escaped by doubling them so the launched
+		// process receives the original path.
+		escaped := strings.ReplaceAll(exe, `"`, `""`)
+		return k.SetStringValue(regValueName, `"`+escaped+`"`)
 	}
 	return k.DeleteValue(regValueName)
 }

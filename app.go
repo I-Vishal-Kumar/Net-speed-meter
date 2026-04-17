@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"math"
 	"sync"
 	"time"
@@ -53,15 +54,16 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	// Initial position
-	winW, winH := 86, 36
+	// Initial position — tracker will refine size/position from the live taskbar.
+	winW, winH := widgetSize()
 	x, y := dockPosition(winW, winH, a.GetPlacement())
 	runtime.WindowSetPosition(ctx, x, y)
 	runtime.WindowSetSize(ctx, winW, winH)
 
-	go a.speedLoop()
+	go a.speedLoop(ctx)
 	go startTray(ctx, a)
 	go startTaskbarTracker(ctx, a, winW, winH)
+	go startFullscreenWatcher(ctx, a)
 }
 
 func (a *App) beforeClose(ctx context.Context) (prevent bool) {
@@ -86,18 +88,24 @@ func (a *App) SetPlacement(p string) {
 	a.cfg.Placement = p
 	cfg := a.cfg
 	a.mu.Unlock()
-	SaveConfig(cfg)
+	if err := SaveConfig(cfg); err != nil {
+		log.Printf("speedo: save config: %v", err)
+	}
 }
 
 // ToggleAutoStart enables or disables startup with Windows.
 func (a *App) ToggleAutoStart() bool {
 	current := isAutoStartEnabled()
-	setAutoStart(!current)
+	if err := setAutoStart(!current); err != nil {
+		log.Printf("speedo: set autostart: %v", err)
+	}
 	a.mu.Lock()
 	a.cfg.StartWithWindows = !current
 	cfg := a.cfg
 	a.mu.Unlock()
-	SaveConfig(cfg)
+	if err := SaveConfig(cfg); err != nil {
+		log.Printf("speedo: save config: %v", err)
+	}
 	return !current
 }
 
@@ -129,33 +137,43 @@ func (a *App) ShowContextMenu() {
 	showNativeMenu(a.ctx, a, evt, placement, autoStart)
 }
 
-func (a *App) speedLoop() {
+func (a *App) speedLoop(ctx context.Context) {
 	prev := monitor.Snapshot()
-	time.Sleep(time.Second)
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	for {
+		select {
+		case <-ctx.Done():
+			// Persist final daily stats on shutdown.
+			a.mu.RLock()
+			d := a.daily
+			a.mu.RUnlock()
+			if err := SaveDailyStats(d); err != nil {
+				log.Printf("speedo: save daily stats on shutdown: %v", err)
+			}
+			return
+		case <-ticker.C:
+		}
+
 		speed, next := monitor.Poll(prev)
 		prev = next
 
-		// Calculate byte deltas for accumulation
-		dlBytes := uint64(speed.Download)
-		ulBytes := uint64(speed.Upload)
-
 		a.mu.Lock()
-		// Peak
-		a.peakDown = math.Max(a.peakDown, speed.Download)
-		a.peakUp = math.Max(a.peakUp, speed.Upload)
-		// Session
-		a.sessionDown += dlBytes
-		a.sessionUp += ulBytes
-		// Daily
-		today := time.Now().Format("2006-01-02")
-		if a.daily.Date != today {
-			// Day rolled over — reset
-			a.daily = DailyStats{Date: today}
+		if speed.Valid {
+			a.peakDown = math.Max(a.peakDown, speed.Download)
+			a.peakUp = math.Max(a.peakUp, speed.Upload)
+			a.sessionDown += speed.DeltaRecv
+			a.sessionUp += speed.DeltaSent
+
+			today := time.Now().Format("2006-01-02")
+			if a.daily.Date != today {
+				a.daily = DailyStats{Date: today}
+			}
+			a.daily.Down += speed.DeltaRecv
+			a.daily.Up += speed.DeltaSent
 		}
-		a.daily.Down += dlBytes
-		a.daily.Up += ulBytes
 
 		evt := SpeedEvent{
 			Download:    speed.Download,
@@ -169,15 +187,24 @@ func (a *App) speedLoop() {
 			TodayUp:     a.daily.Up,
 		}
 
-		// Save daily stats every 30 ticks (~30s)
 		a.saveTicker++
+		var snapshot DailyStats
+		shouldSave := false
 		if a.saveTicker >= 30 {
 			a.saveTicker = 0
-			go SaveDailyStats(a.daily)
+			snapshot = a.daily
+			shouldSave = true
 		}
 		a.mu.Unlock()
 
+		if shouldSave {
+			go func(d DailyStats) {
+				if err := SaveDailyStats(d); err != nil {
+					log.Printf("speedo: save daily stats: %v", err)
+				}
+			}(snapshot)
+		}
+
 		runtime.EventsEmit(a.ctx, "speed", evt)
-		time.Sleep(time.Second)
 	}
 }
