@@ -107,6 +107,15 @@ func showNativeMenu(ctx context.Context, app *App, evt SpeedEvent, placement str
 	autoID := appendItem(autoFlags, "Start with Windows")
 	appendSep()
 
+	// ── Size / position ──
+	calibrateID := appendItem(MF_STRING, "Calibrate size…")
+	resetSizeFlags := uintptr(MF_STRING)
+	if !app.HasCalibration() {
+		resetSizeFlags |= MF_GRAYED
+	}
+	resetSizeID := appendItem(resetSizeFlags, "Reset to auto")
+	appendSep()
+
 	// ── Actions ──
 	hideID := appendItem(MF_STRING, "Hide")
 	quitID := appendItem(MF_STRING, "Quit")
@@ -138,6 +147,10 @@ func showNativeMenu(ctx context.Context, app *App, evt SpeedEvent, placement str
 		app.SetPlacement("tray")
 	case autoID:
 		app.ToggleAutoStart()
+	case calibrateID:
+		app.EnterCalibrate()
+	case resetSizeID:
+		app.ResetCalibrate()
 	case hideID:
 		wailsruntime.WindowHide(ctx)
 	case quitID:

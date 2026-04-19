@@ -25,21 +25,22 @@ type rect struct {
 }
 
 var (
-	shell32           = syscall.NewLazyDLL("shell32.dll")
-	user32            = syscall.NewLazyDLL("user32.dll")
-	pSHAppBarMessage  = shell32.NewProc("SHAppBarMessage")
-	pFindWindowW      = user32.NewProc("FindWindowW")
-	pFindWindowExW    = user32.NewProc("FindWindowExW")
-	pGetWindowRect    = user32.NewProc("GetWindowRect")
-	pSetWindowPos     = user32.NewProc("SetWindowPos")
-	pShowWindow       = user32.NewProc("ShowWindow")
-	pGetSystemMetrics = user32.NewProc("GetSystemMetrics")
-	pGetWindowLongW   = user32.NewProc("GetWindowLongW")
-	pSetWindowLongW   = user32.NewProc("SetWindowLongW")
-	pReleaseCapture   = user32.NewProc("ReleaseCapture")
-	pSendMessageW     = user32.NewProc("SendMessageW")
-	pEnumChildWindows = user32.NewProc("EnumChildWindows")
-	pIsWindowVisible  = user32.NewProc("IsWindowVisible")
+	shell32                = syscall.NewLazyDLL("shell32.dll")
+	user32                 = syscall.NewLazyDLL("user32.dll")
+	pSHAppBarMessage       = shell32.NewProc("SHAppBarMessage")
+	pFindWindowW           = user32.NewProc("FindWindowW")
+	pFindWindowExW         = user32.NewProc("FindWindowExW")
+	pGetWindowRect         = user32.NewProc("GetWindowRect")
+	pSetWindowPos          = user32.NewProc("SetWindowPos")
+	pShowWindow            = user32.NewProc("ShowWindow")
+	pGetSystemMetrics      = user32.NewProc("GetSystemMetrics")
+	pGetWindowLongW        = user32.NewProc("GetWindowLongW")
+	pSetWindowLongW        = user32.NewProc("SetWindowLongW")
+	pReleaseCapture        = user32.NewProc("ReleaseCapture")
+	pSendMessageW          = user32.NewProc("SendMessageW")
+	pEnumChildWindows      = user32.NewProc("EnumChildWindows")
+	pIsWindowVisible       = user32.NewProc("IsWindowVisible")
+	pSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
 )
 
 // Enumeration state for findVisibleTrayLeftEdge. Only one enumeration runs
@@ -113,6 +114,7 @@ const (
 	ABM_GETSTATE      = 4
 	ABS_AUTOHIDE      = 1
 	HWND_TOPMOST      = ^uintptr(0) // -1
+	HWND_TOP          = uintptr(0)
 	SWP_NOSIZE        = 0x0001
 	SWP_NOACTIVATE    = 0x0010
 	SWP_NOMOVE        = 0x0002
@@ -158,6 +160,23 @@ func getScreenSize() (int, int) {
 	cx, _, _ := pGetSystemMetrics.Call(SM_CXSCREEN)
 	cy, _, _ := pGetSystemMetrics.Call(SM_CYSCREEN)
 	return int(cx), int(cy)
+}
+
+// getWorkArea returns the primary monitor's work area (screen minus the
+// taskbar and any docked bars). Used during calibrate so our overlay window
+// does not cover the taskbar — which would otherwise trigger Windows' auto-
+// hide behavior and make tray icons disappear.
+const SPI_GETWORKAREA = 48
+
+func getWorkArea() rect {
+	var r rect
+	pSystemParametersInfoW.Call(SPI_GETWORKAREA, 0, uintptr(unsafe.Pointer(&r)), 0)
+	// Fallback: if the call failed the rect is zero — use the full screen.
+	if r.Right == 0 && r.Bottom == 0 {
+		w, h := getScreenSize()
+		return rect{Left: 0, Top: 0, Right: int32(w), Bottom: int32(h)}
+	}
+	return r
 }
 
 func getTaskbarInfo() (r rect, autoHide bool) {
@@ -264,6 +283,15 @@ func findTrayNotifyArea(tbHwnd uintptr) (rect, bool) {
 	}
 	// Fallback: the wide TrayNotifyWnd rect — better than nothing.
 	return getWindowRect(trayNotify), true
+}
+
+// effectiveWidgetSize returns the calibrated override if set, otherwise the
+// auto-computed size derived from the taskbar.
+func effectiveWidgetSize(a *App) (int, int) {
+	if cw, ch := a.CalibratedSize(); cw > 0 && ch > 0 {
+		return cw, ch
+	}
+	return widgetSize()
 }
 
 // widgetSize derives the widget pixel dimensions from the current taskbar.
@@ -389,9 +417,19 @@ func startTaskbarTracker(ctx context.Context, app *App, _, _ int) {
 			continue
 		}
 
-		w, h := widgetSize()
-		placement := app.GetPlacement()
-		x, y := dockPosition(w, h, placement)
+		// While the user is calibrating, let the frontend own size+pos.
+		if app.IsCalibrating() {
+			continue
+		}
+
+		w, h := effectiveWidgetSize(app)
+		var x, y int
+		if cx, cy := app.CalibratedPosition(); cx != 0 || cy != 0 {
+			x, y = cx, cy
+		} else {
+			placement := app.GetPlacement()
+			x, y = dockPosition(w, h, placement)
+		}
 
 		if ourHwnd == 0 {
 			ourHwnd = getOurHwnd()

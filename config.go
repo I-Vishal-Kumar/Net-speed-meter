@@ -13,6 +13,10 @@ import (
 type Config struct {
 	Placement        string `json:"placement"` // "tray" or "left"
 	StartWithWindows bool   `json:"startWithWindows"`
+	CalibrateW       int    `json:"calibrateW,omitempty"` // 0 = auto-size from taskbar
+	CalibrateH       int    `json:"calibrateH,omitempty"`
+	CalibrateX       int    `json:"calibrateX,omitempty"` // 0,0 = auto-dock; any other = explicit position
+	CalibrateY       int    `json:"calibrateY,omitempty"`
 }
 
 // DailyStats tracks cumulative data usage for the current day.
